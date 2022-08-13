@@ -41,7 +41,7 @@ php artisan key:generate
 ```
 php artisan serve 
 ```
-#### You can download the front end side (react js) from here : [quiz-albarakah](https://github.com/almuhder/quiz-albarakah/tree/front)
+#### You can download the front end side (react js) from here : [albarakah association](https://github.com/almuhder/quiz-albarakah/tree/front)
 <hr>
 
 ## Now You Can Use This App 
