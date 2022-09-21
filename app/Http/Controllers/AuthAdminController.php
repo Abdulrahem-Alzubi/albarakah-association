@@ -5,18 +5,16 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Requests\ForgotPasswordRequest;
 use App\Http\Requests\LoginRequest;
-use App\Http\Requests\RegisterRequest;
 use App\Http\Requests\ResetPasswordRequest;
+use App\Mail\TestMail;
 use App\Models\Admin;
 use App\Traits\GeneralTrait;
-use Illuminate\Auth\AuthenticationException;
-use Illuminate\Auth\Events\PasswordReset;
-use Illuminate\Http\Request;
+use Exception;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Password;
-use Nette\Schema\ValidationException;
-use \Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class AuthAdminController extends Controller
 {
@@ -46,33 +44,46 @@ use GeneralTrait;
         return $this->returnSuccessMessage('logged out successfully');
     }
 
-    public function forgotPassword(ForgotPasswordRequest $request) {
-        $status = Password::sendResetLink($request->only('email'));
-        if ($status == Password::RESET_LINK_SENT) {
-            return $this->returnSuccessMessage(__($status));
+    public function forgotPassword(ForgotPasswordRequest $request)
+    {
+        try {
+            $token = Str::random(64);
+            $user = DB::table('password_resets')->where('email', $request->email)->update([
+                'token' => Hash::make($token)
+            ]);
+            if (!$user) {
+                DB::table('password_resets')->insert([
+                    'email' => $request->email,
+                    'token' => Hash::make($token),
+                    'created_at' => now(),
+                ]);
+            }
+
+            $url = 'http://localhost:3000/admin/reset?token=' . $token;
+            Mail::to('technologyinfo20@gmail.com')->send(new TestMail($url));
+            return $this->returnSuccessMessage('Check your email');
+        } catch (Exception $exception) {
+            return $this->returnErrorMessage($exception->getMessage());
         }
-        throw \Illuminate\Validation\ValidationException::withMessages([
-            'email'=> [trans($status)],
-        ]);
+
     }
 
-    public function resetPassword(ResetPasswordRequest $request) {
-       $status = Password::reset($request->only('email','token', 'password', 'password_confirmation'),
-       function ($admin, $password) {
-           $admin->forceFill([
-               'password' => Hash::make($password)
-           ])->setRememberToken(Str::random(60));
-
-           $admin->save();
-           $admin->tokens()->delete();
-
-           event(new PasswordReset($admin));
-       });
-
-       if ($status == Password::PASSWORD_RESET) {
-           return $this->returnSuccessMessage(__($status));
-       }
-        return $this->returnErrorMessage(__($status), 500);
+    public function resetPassword(ResetPasswordRequest $request)
+    {
+        $email = $request->email;
+        $token = $request->token;
+        $password = $request->password;
+        $resetPasswordToken = DB::table('password_resets')->where('email', $email)->first();
+        $admin = Admin::query()->where('email', $email)->first();
+        if (isset($resetPasswordToken) && Hash::check($token, $resetPasswordToken->token)) {
+            $admin->update([
+                'password' => Hash::make($password),
+            ]);
+            $admin->tokens()->delete();
+            DB::table('password_resets')->where('email', $email)->delete();
+            return $this->returnSuccessMessage('reset password successfully');
+        }
+        return $this->returnErrorMessage('invalid token, please try again', 403);
     }
 
     public function changePassword(ChangePasswordRequest $request) {
